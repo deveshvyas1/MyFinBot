@@ -108,4 +108,60 @@ For production use you may:
 2. Configure logging rotation and persistence.
 3. Secure the host (firewall, limited user permissions) and rotate the bot token if you regenerate it.
 
+### VPS setup (one time)
+
+```sh
+git clone https://github.com/deveshvyas1/MyFinBot.git ~/bots/MyFinBot
+cd ~/bots/MyFinBot
+chmod +x install.sh start.sh
+./install.sh
+nano config/bot_token.txt  # paste your Telegram bot token on a single line
+```
+
+Start the bot manually with:
+
+```sh
+./start.sh
+```
+
+### Keep it running 24/7 (systemd)
+
+```sh
+sudo tee /etc/systemd/system/myfinbot.service <<'EOF'
+[Unit]
+Description=MyFinBot Telegram bot
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/youruser/bots/MyFinBot
+ExecStart=/bin/bash /home/youruser/bots/MyFinBot/start.sh
+Restart=always
+RestartSec=5
+User=youruser
+Environment=PATH=/home/youruser/bots/MyFinBot/.venv/bin:/usr/bin
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now myfinbot.service
+```
+
+Check the service anytime:
+
+```sh
+systemctl status myfinbot.service   # press q to exit
+journalctl -u myfinbot.service -f   # follow logs
+```
+
+### Deploy future updates
+
+```sh
+cd ~/bots/MyFinBot
+git pull
+sudo systemctl restart myfinbot.service
+```
+
 Enjoy keeping your cash flow on track!
