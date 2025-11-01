@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 from .finance import (
     build_cycle_computation,
-    compute_required_funds,
+    compute_required_windows,
     daily_default_details,
     resolve_cycle_start,
 )
@@ -174,33 +174,49 @@ class CycleManager:
         self, today: date, user_id: Optional[int] = None
     ) -> Dict[str, object]:
         cycle = self.ensure_cycle_for_date(today, user_id=user_id)
-        required = compute_required_funds(today, self._config)
+        primary, tenth = compute_required_windows(today, self._config)
         default_total, breakdown = daily_default_details(today, self._config)
+        components = {
+            "rent": {"amount": primary.rent, "due_date": primary.end},
+            "electricity": {
+                "amount": primary.electricity,
+                "due_date": primary.electricity_due,
+            },
+            "tiffin": {
+                "amount": primary.tiffin,
+                "weekday_meals": primary.tiffin_weekday_meals,
+                "saturday_meals": primary.tiffin_saturday_meals,
+            },
+            "daily": {
+                "amount": primary.daily_spend_total,
+                "start": primary.start,
+                "end": primary.end,
+                "days": primary.day_count,
+            },
+        }
+        extra_days = max(tenth.day_count - primary.day_count, 0)
+        extra_daily_amount = max(
+            tenth.daily_spend_total - primary.daily_spend_total, 0
+        )
+        extra_start = primary.end + timedelta(days=1) if extra_days > 0 else None
         return {
             "cycle": cycle,
             "today": today,
-            "due_date": required.end,
-            "required_total": required.total,
-            "components": {
-                "rent": {
-                    "amount": required.rent,
-                    "due_date": required.end,
-                },
-                "electricity": {
-                    "amount": required.electricity,
-                    "due_date": required.end,
-                },
-                "tiffin": {
-                    "amount": required.tiffin,
-                    "weekday_meals": required.tiffin_weekday_meals,
-                    "saturday_meals": required.tiffin_saturday_meals,
-                },
-                "daily": {
-                    "amount": required.daily_spend_total,
-                    "start": required.start,
-                    "end": required.end,
-                    "days": required.day_count,
-                },
+            "primary": {
+                "total": primary.total,
+                "end": primary.end,
+                "days": primary.day_count,
+                "daily_amount": primary.daily_spend_total,
+            },
+            "components": components,
+            "tenth_summary": {
+                "total": tenth.total,
+                "end": tenth.end,
+                "days": tenth.day_count,
+                "daily_amount": tenth.daily_spend_total,
+                "extra_days": extra_days,
+                "extra_daily_amount": extra_daily_amount,
+                "extra_start": extra_start,
             },
             "today_default": {
                 "total": default_total,

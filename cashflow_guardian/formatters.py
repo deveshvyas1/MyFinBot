@@ -1,7 +1,7 @@
 """Formatting utilities for bot responses."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Mapping
 
 from .models import CycleState
@@ -62,17 +62,29 @@ def _format_tiffin_details(component: Mapping[str, object]) -> str:
 def format_status(
     *,
     today: date,
-    due_date: date,
-    required_amount: int,
+    primary: Mapping[str, object],
     components: Mapping[str, Mapping[str, object]],
+    tenth: Mapping[str, object],
 ) -> str:
+    due_date = primary.get("end", today)  # type: ignore[arg-type]
+    due_date = due_date if isinstance(due_date, date) else today
+    required_amount = int(primary.get("total", 0))
+
     lines = [
         (
             f"{_format_date(today)}: Hold {_format_money(required_amount)} to cover "
             f"essentials through {_format_date(due_date)}."
-        ),
-        "Breakdown:",
+        )
     ]
+
+    tenth_end = tenth.get("end", due_date)  # type: ignore[arg-type]
+    tenth_end = tenth_end if isinstance(tenth_end, date) else due_date
+    tenth_total = int(tenth.get("total", 0))
+    lines.append(
+        f"Through {_format_date(tenth_end)}: Hold {_format_money(tenth_total)}."
+    )
+
+    lines.append("Breakdown:")
 
     rent = components.get("rent", {})
     rent_amount = int(rent.get("amount", 0))
@@ -84,14 +96,14 @@ def format_status(
 
     electricity = components.get("electricity", {})
     electricity_amount = int(electricity.get("amount", 0))
+    electric_due = electricity.get("due_date", due_date)  # type: ignore[arg-type]
+    electric_due_date = (
+        electric_due if isinstance(electric_due, date) else due_date
+    )
     if electricity_amount > 0:
-        electricity_due = electricity.get("due_date", due_date)  # type: ignore[arg-type]
-        electricity_due_date = (
-            electricity_due if isinstance(electricity_due, date) else due_date
-        )
         lines.append(
             "- Electricity due "
-            f"{_format_date(electricity_due_date)}: "
+            f"{_format_date(electric_due_date)}: "
             f"{_format_money(electricity_amount)}"
         )
     else:
@@ -115,5 +127,15 @@ def format_status(
     lines.append(
         f"- Food & daily defaults {range_text}: {_format_money(daily_amount)}"
     )
+
+    extra_days = int(tenth.get("extra_days", 0))
+    extra_daily_amount = int(tenth.get("extra_daily_amount", 0))
+    extra_start = tenth.get("extra_start")  # type: ignore[arg-type]
+    if extra_days > 0 and extra_daily_amount > 0 and isinstance(extra_start, date):
+        extra_range = f"{_format_date(extra_start)} → {_format_date(tenth_end)}"
+        extra_range += f" ({extra_days} days)"
+        lines.append(
+            f"- Extra daily defaults {extra_range}: {_format_money(extra_daily_amount)}"
+        )
 
     return "\n".join(lines)

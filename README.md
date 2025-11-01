@@ -74,7 +74,7 @@ README.md
 - `/start` - introduction and an immediate status snapshot.
 - `/start_cycle <amount>` - optional manual cycle with a custom opening balance (useful if incomes differ from the defaults).
 - `/set_balance <amount>` - optional override for an income that deviates from the plan.
-- `/status` - shows how much cash to hold today (with a breakdown of rent, electricity, tiffin, and daily defaults) to cover essentials through the first of next month.
+- `/status` - shows how much cash to hold today (with a breakdown of rent, electricity, tiffin, and daily defaults) to cover essentials through the first of next month, plus the total required through the upcoming 10th.
 - `/log_extra <amount> [note]` - logs additional spending outside of the default day plan.
 - `/daily_confirm [extra] [note]` - responds to the 21:30 check-in. If you fail to reply within an hour, defaults are auto-applied with zero extras.
 - `/set_defaults` - interactive update of breakfast/lunch/study defaults. Changes persist to the next cycle.

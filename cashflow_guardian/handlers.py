@@ -55,9 +55,9 @@ class BotHandlers:
             return
         message = format_status(
             today=snapshot["today"],
-            due_date=snapshot["due_date"],
-            required_amount=snapshot["required_total"],
+            primary=snapshot["primary"],
             components=snapshot["components"],
+            tenth=snapshot["tenth_summary"],
         )
         await update.message.reply_text(message)  # type: ignore[arg-type]
 
@@ -95,9 +95,9 @@ class BotHandlers:
             return
         message = format_status(
             today=snapshot["today"],
-            due_date=snapshot["due_date"],
-            required_amount=snapshot["required_total"],
+            primary=snapshot["primary"],
             components=snapshot["components"],
+            tenth=snapshot["tenth_summary"],
         )
         await update.message.reply_text(message)  # type: ignore[arg-type]
 
@@ -245,9 +245,9 @@ class BotHandlers:
             "21:30 check-in",
             format_status(
                 today=snapshot["today"],
-                due_date=snapshot["due_date"],
-                required_amount=snapshot["required_total"],
+                primary=snapshot["primary"],
                 components=snapshot["components"],
+                tenth=snapshot["tenth_summary"],
             ),
             "Reply with /daily_confirm <extra> to log any extras within 60 minutes.",
         ]

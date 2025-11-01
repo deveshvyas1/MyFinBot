@@ -40,6 +40,7 @@ class RequiredFunds:
     tiffin_weekday_meals: int
     tiffin_saturday_meals: int
     electricity: int
+    electricity_due: date
     daily_spend_total: int
     day_count: int
 
@@ -212,30 +213,57 @@ def _daily_spend_between(
     return total, totals_by_date
 
 
-def compute_required_funds(today: date, config: AppConfig) -> RequiredFunds:
+def compute_required_windows(
+    today: date, config: AppConfig
+) -> Tuple[RequiredFunds, RequiredFunds]:
     due_date = _first_day_next_month(today)
-    daily_total, _ = _daily_spend_between(
-        today, due_date, config.daily_defaults
-    )
+    tenth_date = _safe_date(due_date.year, due_date.month, 10)
+
     rent = config.fixed_bills.rent
     tiffin = _tiffin_allocation(config)
     weekday_meals = config.fixed_bills.tiffin_weekday_count
     saturday_meals = config.fixed_bills.tiffin_saturday_count
     electricity = _electricity_allocation(due_date, config)
-    total = rent + tiffin + electricity + daily_total
-    day_count = (due_date - today).days + 1
-    return RequiredFunds(
+
+    primary_daily_total, _ = _daily_spend_between(
+        today, due_date, config.daily_defaults
+    )
+    primary_days = (due_date - today).days + 1
+
+    tenth_daily_total, _ = _daily_spend_between(
+        today, tenth_date, config.daily_defaults
+    )
+    tenth_days = (tenth_date - today).days + 1
+
+    primary = RequiredFunds(
         start=today,
         end=due_date,
-        total=total,
+        total=rent + tiffin + electricity + primary_daily_total,
         rent=rent,
         tiffin=tiffin,
         tiffin_weekday_meals=weekday_meals,
         tiffin_saturday_meals=saturday_meals,
         electricity=electricity,
-        daily_spend_total=daily_total,
-        day_count=day_count,
+        electricity_due=due_date,
+        daily_spend_total=primary_daily_total,
+        day_count=primary_days,
     )
+
+    tenth = RequiredFunds(
+        start=today,
+        end=tenth_date,
+        total=rent + tiffin + electricity + tenth_daily_total,
+        rent=rent,
+        tiffin=tiffin,
+        tiffin_weekday_meals=weekday_meals,
+        tiffin_saturday_meals=saturday_meals,
+        electricity=electricity,
+        electricity_due=due_date,
+        daily_spend_total=tenth_daily_total,
+        day_count=tenth_days,
+    )
+
+    return primary, tenth
 
 
 def parse_checkin_time(config: AppConfig) -> time:
