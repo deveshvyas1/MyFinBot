@@ -5,6 +5,7 @@ A purpose-built Telegram bot that enforces a 30-day virtual wallet routine tailo
 ## Features
 
 - 30-day cycle aligned with the 10th salary inflow and 5th home support.
+- Automatic cycle detection — `/status` works without any manual setup.
 - Automatic Sinking Fund goal calculation (rent, tiffin, and electricity months), including a survival cushion until the next income arrives.
 - Daily Wallet allowance with rolling average guidance and wiggle-room hints.
 - 21:30 reminder with automatic default deductions if you do not respond within an hour.
@@ -70,10 +71,10 @@ README.md
 
 ## Core Commands
 
-- `/start` - introduction and current status (if a cycle exists).
-- `/start_cycle <amount>` - begins a new 30-day cycle using the provided amount as the opening balance (usually the 10th salary).
-- `/set_balance <amount>` - records an income during an active cycle (5th home inflow or any top-up).
-- `/status` - shows Sinking Fund goals, Daily Wallet balance, daily averages, and wiggle room.
+- `/start` - introduction and an immediate status snapshot.
+- `/start_cycle <amount>` - optional manual cycle with a custom opening balance (useful if incomes differ from the defaults).
+- `/set_balance <amount>` - optional override for an income that deviates from the plan.
+- `/status` - shows the Sinking Fund goal, planned spending to date, remaining allowance, and how much cash you should still have right now to stay on track.
 - `/log_extra <amount> [note]` - logs additional spending outside of the default day plan.
 - `/daily_confirm [extra] [note]` - responds to the 21:30 check-in. If you fail to reply within an hour, defaults are auto-applied with zero extras.
 - `/set_defaults` - interactive update of breakfast/lunch/study defaults. Changes persist to the next cycle.

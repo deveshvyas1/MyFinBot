@@ -41,21 +41,23 @@ class BotHandlers:
         assert update.effective_chat
         greeting = (
             "Hello! I am the Cash-Flow Guardian bot.\n"
-            "Use /set_balance <amount> on your income days to build a cycle, "
-            "or /status anytime to see your wallets."
+            "Use /status anytime to see how much cash to hold for the 5th and 10th. "
+            "Optional: /set_balance <amount> if you want to override an income."
         )
         await update.message.reply_text(greeting)  # type: ignore[arg-type]
         today = self._current_date()
+        user_id = update.effective_user.id if update.effective_user else None
         try:
-            snapshot = self.cycle_manager.get_status_snapshot(today)
+            snapshot = self.cycle_manager.get_status_snapshot(
+                today, user_id=user_id
+            )
         except RuntimeError:
             return
-        cycle = snapshot["cycle"]
         message = format_status(
-            cycle=cycle,
-            days_left=snapshot["days_left"],
-            today=today,
-            today_default=snapshot["today_default"],
+            fifth_date=snapshot["fifth_target_date"],
+            fifth_amount=snapshot["fifth_target_amount"],
+            tenth_date=snapshot["tenth_target_date"],
+            tenth_amount=snapshot["tenth_target_amount"],
         )
         await update.message.reply_text(message)  # type: ignore[arg-type]
 
@@ -83,16 +85,19 @@ class BotHandlers:
 
     async def status(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         today = self._current_date()
+        user_id = update.effective_user.id if update.effective_user else None
         try:
-            snapshot = self.cycle_manager.get_status_snapshot(today)
+            snapshot = self.cycle_manager.get_status_snapshot(
+                today, user_id=user_id
+            )
         except RuntimeError as exc:
             await update.message.reply_text(str(exc))  # type: ignore[arg-type]
             return
         message = format_status(
-            cycle=snapshot["cycle"],
-            days_left=snapshot["days_left"],
-            today=today,
-            today_default=snapshot["today_default"],
+            fifth_date=snapshot["fifth_target_date"],
+            fifth_amount=snapshot["fifth_target_amount"],
+            tenth_date=snapshot["tenth_target_date"],
+            tenth_amount=snapshot["tenth_target_amount"],
         )
         await update.message.reply_text(message)  # type: ignore[arg-type]
 
@@ -236,14 +241,13 @@ class BotHandlers:
             snapshot = self.cycle_manager.get_status_snapshot(today)
         except RuntimeError:
             return
-        cycle = snapshot["cycle"]
         message_lines = [
             "21:30 check-in",
             format_status(
-                cycle=cycle,
-                days_left=snapshot["days_left"],
-                today=today,
-                today_default=snapshot["today_default"],
+                fifth_date=snapshot["fifth_target_date"],
+                fifth_amount=snapshot["fifth_target_amount"],
+                tenth_date=snapshot["tenth_target_date"],
+                tenth_amount=snapshot["tenth_target_amount"],
             ),
             "Reply with /daily_confirm <extra> to log any extras within 60 minutes.",
         ]
@@ -344,6 +348,8 @@ def register_handlers(application: Application, handlers: BotHandlers) -> None:
 
 
 async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if context.error:
+        print("Handler error:", context.error)
     if update is None:
         return
     message = "An error occurred. Please try again."

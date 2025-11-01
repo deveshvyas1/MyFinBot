@@ -77,9 +77,15 @@ class DailyRecord(BaseModel):
         return self.defaults_applied + extra_total
 
 
+class SurvivalDay(BaseModel):
+    date: str
+    default_spend: int
+    breakdown: str
+
+
 class SurvivalAllocation(BaseModel):
     total: int
-    dates: List[Dict[str, str]]
+    dates: List[SurvivalDay]
 
 
 class SinkingBreakdown(BaseModel):

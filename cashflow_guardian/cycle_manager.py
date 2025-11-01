@@ -1,12 +1,16 @@
 """High-level cycle management logic."""
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Dict, Optional
 
 from zoneinfo import ZoneInfo
 
-from .finance import build_cycle_computation, daily_default_details
+from .finance import (
+    build_cycle_computation,
+    daily_default_details,
+    resolve_cycle_start,
+)
 from .models import (
     AppConfig,
     AppState,
@@ -61,6 +65,18 @@ class CycleManager:
     def start_cycle(
         self, *, amount: int, start_date: date, user_id: Optional[int] = None
     ) -> CycleState:
+        cycle_state = self._create_cycle_state(start_date, override_start_income=amount)
+        state = self.load_state()
+        state.cycle = cycle_state
+        if user_id is not None:
+            state.user_id = user_id
+        state.overrides = state.overrides or {}
+        self.save_state(state)
+        return cycle_state
+
+    def _create_cycle_state(
+        self, start_date: date, override_start_income: Optional[int] = None
+    ) -> CycleState:
         computation = build_cycle_computation(start_date, self._config)
         cycle_end = computation.end
 
@@ -70,9 +86,14 @@ class CycleManager:
             planned = income.planned_amount
             received = income.received_amount
             if income.date == start_date:
-                planned = amount
-                received = amount
+                if override_start_income is not None:
+                    planned = override_start_income
+                    received = override_start_income
+                else:
+                    received = planned
                 matched_start = True
+            else:
+                received = planned
             incomes[income.date.isoformat()] = IncomeEntry(
                 date=income.date,
                 description=income.description,
@@ -80,13 +101,12 @@ class CycleManager:
                 received_amount=received,
             )
 
-        if not matched_start:
-            # No configured income on the start date; register a manual entry.
+        if override_start_income is not None and not matched_start:
             manual_income = IncomeEntry(
                 date=start_date,
                 description="Cycle opening balance",
-                planned_amount=amount,
-                received_amount=amount,
+                planned_amount=override_start_income,
+                received_amount=override_start_income,
             )
             incomes[start_date.isoformat()] = manual_income
 
@@ -121,8 +141,21 @@ class CycleManager:
             },
             timezone=self._config.cycle.timezone,
         )
+        return cycle_state
 
+    def ensure_cycle_for_date(
+        self, today: date, user_id: Optional[int] = None
+    ) -> CycleState:
+        expected_start = resolve_cycle_start(today, self._config)
         state = self.load_state()
+        cycle = state.cycle
+        if cycle and cycle.start == expected_start:
+            if user_id is not None and state.user_id is None:
+                state.user_id = user_id
+                self.save_state(state)
+            return cycle
+
+        cycle_state = self._create_cycle_state(expected_start)
         state.cycle = cycle_state
         if user_id is not None:
             state.user_id = user_id
@@ -136,16 +169,31 @@ class CycleManager:
     def get_cycle(self) -> Optional[CycleState]:
         return self.load_state().cycle
 
-    def get_status_snapshot(self, today: date) -> Dict[str, object]:
-        state = self.load_state()
-        if not state.cycle:
-            raise RuntimeError("No active cycle. Use /start_cycle to begin.")
-        cycle = state.cycle
+    def get_status_snapshot(
+        self, today: date, user_id: Optional[int] = None
+    ) -> Dict[str, object]:
+        cycle = self.ensure_cycle_for_date(today, user_id=user_id)
         days_left = (cycle.end - today).days + 1
         days_left = max(days_left, 0)
-        average = 0 if days_left == 0 else cycle.daily_wallet.balance / days_left
         default_total, breakdown = daily_default_details(today, self._config)
-        wiggle = max(0, average - default_total)
+
+        expected_spent_to_date = sum(
+            amount
+            for date_key, amount in cycle.default_totals_by_date.items()
+            if date.fromisoformat(date_key) <= today
+        )
+        remaining_defaults = max(
+            cycle.daily_wallet.expected_default_spend - expected_spent_to_date, 0
+        )
+        target_total_balance = cycle.sinking_breakdown.total + remaining_defaults
+        per_day_plan = 0 if days_left == 0 else remaining_defaults / days_left
+        wiggle = max(0, per_day_plan - default_total)
+
+        fifth_date = date(cycle.due_date.year, cycle.due_date.month, 5)
+        tenth_date = date(cycle.due_date.year, cycle.due_date.month, 10)
+
+        fifth_amount = self._target_balance_on(cycle, fifth_date)
+        tenth_amount = self._target_balance_on(cycle, tenth_date)
         return {
             "cycle": cycle,
             "days_left": days_left,
@@ -154,7 +202,35 @@ class CycleManager:
                 "breakdown": breakdown,
                 "wiggle": wiggle,
             },
+            "expected_spent_to_date": expected_spent_to_date,
+            "planned_remaining": remaining_defaults,
+            "target_balance": target_total_balance,
+            "per_day_plan": per_day_plan,
+            "fifth_target_date": fifth_date,
+            "fifth_target_amount": fifth_amount,
+            "tenth_target_date": tenth_date,
+            "tenth_target_amount": tenth_amount,
         }
+
+    def _target_balance_on(self, cycle: CycleState, target_date: date) -> int:
+        if target_date < cycle.start:
+            inclusive = cycle.start - timedelta(days=1)
+        elif target_date > cycle.end:
+            inclusive = cycle.end
+        else:
+            inclusive = target_date
+
+        totals_by_day = {
+            date.fromisoformat(key): amount
+            for key, amount in cycle.default_totals_by_date.items()
+        }
+        expected_spent = sum(
+            amount for day, amount in totals_by_day.items() if day <= inclusive
+        )
+        remaining_defaults = max(
+            cycle.daily_wallet.expected_default_spend - expected_spent, 0
+        )
+        return cycle.sinking_breakdown.total + remaining_defaults
 
     # ------------------------------------------------------------------
     # Spend logging helpers

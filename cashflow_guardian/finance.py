@@ -14,6 +14,7 @@ from .models import (
     IncomeSourceConfig,
     SinkingBreakdown,
     SurvivalAllocation,
+    SurvivalDay,
 )
 
 
@@ -50,6 +51,15 @@ def _resolve_income_date(anchor: date, day: int) -> date:
         except ValueError:
             # Day exceeded month length; step back one day until valid
             day -= 1
+
+
+def _safe_date(year: int, month: int, day: int) -> date:
+    while day > 0:
+        try:
+            return date(year, month, day)
+        except ValueError:
+            day -= 1
+    raise ValueError("Unable to resolve a valid date for the given month/year")
 
 
 def _resolve_income_schedule(
@@ -125,19 +135,19 @@ def _survival_allocation(
     if not next_income:
         return SurvivalAllocation(total=0, dates=[])
     total = 0
-    details: List[Dict[str, str]] = []
+    details: List[SurvivalDay] = []
     current = due_date
     while current < next_income.date:
         default_total, breakdown = _default_cost_for_date(current, defaults)
         total += default_total
         details.append(
-            {
-                "date": current.isoformat(),
-                "default_spend": default_total,
-                "breakdown": ", ".join(
+            SurvivalDay(
+                date=current.isoformat(),
+                default_spend=default_total,
+                breakdown=", ".join(
                     f"{key}: ₹{value}" for key, value in breakdown.items()
                 ),
-            }
+            )
         )
         current += timedelta(days=1)
     return SurvivalAllocation(total=total, dates=details)
@@ -181,3 +191,12 @@ def build_cycle_computation(start: date, config: AppConfig) -> CycleComputation:
 def parse_checkin_time(config: AppConfig) -> time:
     hour, minute = map(int, config.cycle.checkin_time.split(":"))
     return time(hour=hour, minute=minute, tzinfo=ZoneInfo(config.cycle.timezone))
+
+
+def resolve_cycle_start(today: date, config: AppConfig) -> date:
+    anchor_day = max(source.day for source in config.income_sources)
+    if today.day >= anchor_day:
+        return _safe_date(today.year, today.month, anchor_day)
+    prev_month = today.month - 1 or 12
+    prev_year = today.year - 1 if today.month == 1 else today.year
+    return _safe_date(prev_year, prev_month, anchor_day)
