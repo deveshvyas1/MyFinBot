@@ -11,11 +11,19 @@ install:
 	$(VENVDIR)/bin/pip install -r requirements.txt
 
 run:
-	@if [ -z "$(BOT_TOKEN)" ]; then \
-		echo "BOT_TOKEN environment variable is required"; \
+	@if [ ! -d "$(VENVDIR)" ]; then \
+		echo "Virtual environment not found. Run 'make install' first."; \
 		exit 1; \
 	fi
-	BOT_TOKEN="$(BOT_TOKEN)" $(VENVDIR)/bin/python bot.py
+	@if [ ! -f "config/bot_token.txt" ]; then \
+		echo "config/bot_token.txt is missing; add your Telegram bot token."; \
+		exit 1; \
+	fi
+	@if grep -q "PASTE_YOUR_TELEGRAM_BOT_TOKEN_HERE" config/bot_token.txt; then \
+		echo "Update config/bot_token.txt with your actual Telegram bot token."; \
+		exit 1; \
+	fi
+	$(VENVDIR)/bin/python bot.py
 
 clean:
 	rm -rf $(VENVDIR)

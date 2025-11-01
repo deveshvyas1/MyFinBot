@@ -6,9 +6,13 @@ if [ ! -d ".venv" ]; then
   exit 1
 fi
 
-export BOT_TOKEN="${BOT_TOKEN:-$(grep ^BOT_TOKEN= .env | cut -d'=' -f2-)}"
-if [ -z "$BOT_TOKEN" ]; then
-  echo "BOT_TOKEN not set. Please add it to .env or export it." >&2
+if [ ! -f "config/bot_token.txt" ]; then
+  echo "config/bot_token.txt is missing. Add your Telegram bot token to it." >&2
+  exit 1
+fi
+
+if grep -q "PASTE_YOUR_TELEGRAM_BOT_TOKEN_HERE" config/bot_token.txt; then
+  echo "Update config/bot_token.txt with your actual Telegram bot token." >&2
   exit 1
 fi
 

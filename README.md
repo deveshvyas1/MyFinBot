@@ -26,11 +26,11 @@ cashflow_guardian/
   models.py
   storage.py
 config/
+   bot_token.txt
   defaults.yaml
 data/
   state.json (created on first run)
 requirements.txt
-.env.example
 README.md
 ```
 
@@ -46,7 +46,7 @@ README.md
 
 2. **Token configuration**
 
-   The project already includes a `.env` file populated with the current bot token. Update the value if you regenerate the token. The runtime scripts read from `.env` automatically.
+   Open `config/bot_token.txt`, paste your Telegram bot token, and save the file. Keep the token on one line with no extra spaces.
 
 3. **Run the bot in seconds**
 
@@ -54,7 +54,7 @@ README.md
    ./start.sh
    ```
 
-   `start.sh` activates the virtual environment, injects `BOT_TOKEN`, and launches `bot.py` via polling.
+   `start.sh` activates the virtual environment, validates `config/bot_token.txt`, and launches `bot.py` via polling.
 
 4. **Alternative manual setup**
 
@@ -67,7 +67,7 @@ README.md
    python bot.py
    ```
 
-   Ensure `BOT_TOKEN` is exported or present in `.env` before running.
+   Ensure `config/bot_token.txt` contains your token before running.
 
 ## Core Commands
 
