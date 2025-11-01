@@ -253,8 +253,11 @@ class BotHandlers:
         ]
         await context.bot.send_message(chat_id=chat_id, text="\n".join(message_lines))
         auto_job_name = f"{CHECKIN_JOB_NAME}_auto_{today.isoformat()}"
-        self._cancel_job(context.job_queue, auto_job_name)
-        context.job_queue.run_once(
+        job_queue = context.job_queue
+        if job_queue is None:
+            return
+        self._cancel_job(job_queue, auto_job_name)
+        job_queue.run_once(
             self.auto_apply_defaults_job,
             when=timedelta(
                 minutes=self.cycle_manager.config.cycle.auto_apply_defaults_after_minutes
@@ -296,6 +299,8 @@ class BotHandlers:
         if chat is None:
             return
         job_queue = context.job_queue
+        if job_queue is None:
+            return
         self._cancel_job(job_queue, CHECKIN_JOB_NAME)
         job_queue.run_daily(
             self.daily_checkin_job,
@@ -304,7 +309,9 @@ class BotHandlers:
             chat_id=chat.id,
         )
 
-    def _cancel_job(self, job_queue: JobQueue, name: str) -> None:
+    def _cancel_job(self, job_queue: Optional[JobQueue], name: str) -> None:
+        if job_queue is None:
+            return
         jobs = job_queue.get_jobs_by_name(name)
         for job in jobs:
             job.schedule_removal()
@@ -315,6 +322,8 @@ class BotHandlers:
             return
         job_queue = application.job_queue
         self._cancel_job(job_queue, CHECKIN_JOB_NAME)
+        if job_queue is None:
+            return
         job_queue.run_daily(
             self.daily_checkin_job,
             time=parse_checkin_time(self.cycle_manager.config),
