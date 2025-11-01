@@ -1,0 +1,34 @@
+fixed_bills:
+  rent: 6000
+  tiffin_daily_cost: 90
+  tiffin_weekday_count: 22
+  tiffin_saturday_count: 4
+  electricity_amount: 2000
+  electricity_due_months: [2, 4, 6, 8, 10, 12]
+income_sources:
+  - day: 10
+    amount: 10000
+    description: "Salary inflow"
+  - day: 5
+    amount: 5000
+    description: "Home inflow"
+daily_defaults:
+  weekday:
+    breakfast: 35
+    lunch: 50
+  saturday:
+    breakfast: 35
+    lunch: 50
+    study: 100
+  sunday:
+    breakfast: 35
+    lunch: 50
+    dinner: 120
+    study: 100
+cycle:
+  length_days: 30
+  timezone: "Asia/Kolkata"
+  checkin_time: "21:30"
+  auto_apply_defaults_after_minutes: 60
+buffer:
+  track: true
