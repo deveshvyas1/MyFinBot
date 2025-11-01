@@ -35,39 +35,38 @@ README.md
 
 ## Getting Started
 
-1. **Create a virtual environment and install dependencies**
+1. **One-command install (recommended)**
+
+   ```sh
+   ./install.sh
+   ```
+
+   The script creates `.venv`, upgrades `pip`, and installs the requirements. Run it once per machine.
+
+2. **Token configuration**
+
+   The project already includes a `.env` file populated with the current bot token. Update the value if you regenerate the token. The runtime scripts read from `.env` automatically.
+
+3. **Run the bot in seconds**
+
+   ```sh
+   ./start.sh
+   ```
+
+   `start.sh` activates the virtual environment, injects `BOT_TOKEN`, and launches `bot.py` via polling.
+
+4. **Alternative manual setup**
+
+   If you prefer the traditional steps:
 
    ```sh
    python3 -m venv .venv
    source .venv/bin/activate
    pip install -r requirements.txt
-   ```
-
-2. **Configure the bot token**
-
-   Copy `.env.example` to `.env` (or export the variable in your shell) and insert your Telegram Bot token.
-
-   ```sh
-   cp .env.example .env
-   echo 'BOT_TOKEN=your-telegram-bot-token' >> .env
-   ```
-
-   When running the bot, ensure `BOT_TOKEN` is exported into the environment. Avoid committing your real token.
-
-3. **Bootstrap data directory (first run only)** - the code creates `data/state.json` automatically, but you can pre-create it if you prefer:
-
-   ```sh
-   mkdir -p data
-   echo '{}' > data/state.json
-   ```
-
-4. **Run the bot**
-
-   ```sh
    python bot.py
    ```
 
-   The bot uses polling by default. Deploy it on a long-running host or process manager to keep it alive.
+   Ensure `BOT_TOKEN` is exported or present in `.env` before running.
 
 ## Core Commands
 
@@ -106,6 +105,6 @@ For production use you may:
 
 1. Containerize the bot or run it under a process manager such as `systemd`, `pm2`, or `supervisord`.
 2. Configure logging rotation and persistence.
-3. Secure the host (firewall, limited user permissions) and keep the bot token secret.
+3. Secure the host (firewall, limited user permissions) and rotate the bot token if you regenerate it.
 
 Enjoy keeping your cash flow on track!
