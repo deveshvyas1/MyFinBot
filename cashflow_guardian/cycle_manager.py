@@ -175,19 +175,33 @@ class CycleManager:
     ) -> Dict[str, object]:
         cycle = self.ensure_cycle_for_date(today, user_id=user_id)
         required = compute_required_funds(today, self._config)
-        days_remaining = (required.due_date - today).days + 1
         default_total, breakdown = daily_default_details(today, self._config)
         return {
             "cycle": cycle,
-            "due_date": required.due_date,
+            "today": today,
+            "due_date": required.end,
             "required_total": required.total,
             "components": {
-                "rent": required.rent,
-                "tiffin": required.tiffin,
-                "electricity": required.electricity,
-                "daily_spend": required.daily_spend_total,
+                "rent": {
+                    "amount": required.rent,
+                    "due_date": required.end,
+                },
+                "electricity": {
+                    "amount": required.electricity,
+                    "due_date": required.end,
+                },
+                "tiffin": {
+                    "amount": required.tiffin,
+                    "weekday_meals": required.tiffin_weekday_meals,
+                    "saturday_meals": required.tiffin_saturday_meals,
+                },
+                "daily": {
+                    "amount": required.daily_spend_total,
+                    "start": required.start,
+                    "end": required.end,
+                    "days": required.day_count,
+                },
             },
-            "days_remaining": days_remaining,
             "today_default": {
                 "total": default_total,
                 "breakdown": breakdown,
