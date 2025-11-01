@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 from .finance import (
     build_cycle_computation,
+    compute_required_funds,
     daily_default_details,
     resolve_cycle_start,
 )
@@ -173,64 +174,25 @@ class CycleManager:
         self, today: date, user_id: Optional[int] = None
     ) -> Dict[str, object]:
         cycle = self.ensure_cycle_for_date(today, user_id=user_id)
-        days_left = (cycle.end - today).days + 1
-        days_left = max(days_left, 0)
+        required = compute_required_funds(today, self._config)
+        days_remaining = (required.due_date - today).days + 1
         default_total, breakdown = daily_default_details(today, self._config)
-
-        expected_spent_to_date = sum(
-            amount
-            for date_key, amount in cycle.default_totals_by_date.items()
-            if date.fromisoformat(date_key) <= today
-        )
-        remaining_defaults = max(
-            cycle.daily_wallet.expected_default_spend - expected_spent_to_date, 0
-        )
-        target_total_balance = cycle.sinking_breakdown.total + remaining_defaults
-        per_day_plan = 0 if days_left == 0 else remaining_defaults / days_left
-        wiggle = max(0, per_day_plan - default_total)
-
-        fifth_date = date(cycle.due_date.year, cycle.due_date.month, 5)
-        tenth_date = date(cycle.due_date.year, cycle.due_date.month, 10)
-
-        fifth_amount = self._target_balance_on(cycle, fifth_date)
-        tenth_amount = self._target_balance_on(cycle, tenth_date)
         return {
             "cycle": cycle,
-            "days_left": days_left,
+            "due_date": required.due_date,
+            "required_total": required.total,
+            "components": {
+                "rent": required.rent,
+                "tiffin": required.tiffin,
+                "electricity": required.electricity,
+                "daily_spend": required.daily_spend_total,
+            },
+            "days_remaining": days_remaining,
             "today_default": {
                 "total": default_total,
                 "breakdown": breakdown,
-                "wiggle": wiggle,
             },
-            "expected_spent_to_date": expected_spent_to_date,
-            "planned_remaining": remaining_defaults,
-            "target_balance": target_total_balance,
-            "per_day_plan": per_day_plan,
-            "fifth_target_date": fifth_date,
-            "fifth_target_amount": fifth_amount,
-            "tenth_target_date": tenth_date,
-            "tenth_target_amount": tenth_amount,
         }
-
-    def _target_balance_on(self, cycle: CycleState, target_date: date) -> int:
-        if target_date < cycle.start:
-            inclusive = cycle.start - timedelta(days=1)
-        elif target_date > cycle.end:
-            inclusive = cycle.end
-        else:
-            inclusive = target_date
-
-        totals_by_day = {
-            date.fromisoformat(key): amount
-            for key, amount in cycle.default_totals_by_date.items()
-        }
-        expected_spent = sum(
-            amount for day, amount in totals_by_day.items() if day <= inclusive
-        )
-        remaining_defaults = max(
-            cycle.daily_wallet.expected_default_spend - expected_spent, 0
-        )
-        return cycle.sinking_breakdown.total + remaining_defaults
 
     # ------------------------------------------------------------------
     # Spend logging helpers

@@ -42,15 +42,8 @@ def format_cycle_intro(cycle: CycleState) -> str:
     return "\n".join(lines)
 
 
-def format_status(
-    *,
-    fifth_date: date,
-    fifth_amount: int,
-    tenth_date: date,
-    tenth_amount: int,
-) -> str:
-    lines = [
-        f"Money to hold till {_format_date(fifth_date)}: {_format_money(fifth_amount)}",
-        f"Money to hold till {_format_date(tenth_date)}: {_format_money(tenth_amount)}",
-    ]
-    return "\n".join(lines)
+def format_status(*, due_date: date, required_amount: int) -> str:
+    return (
+        f"Hold {_format_money(required_amount)} to cover essentials through "
+        f"{_format_date(due_date)}."
+    )

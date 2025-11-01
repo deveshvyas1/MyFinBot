@@ -54,10 +54,8 @@ class BotHandlers:
         except RuntimeError:
             return
         message = format_status(
-            fifth_date=snapshot["fifth_target_date"],
-            fifth_amount=snapshot["fifth_target_amount"],
-            tenth_date=snapshot["tenth_target_date"],
-            tenth_amount=snapshot["tenth_target_amount"],
+            due_date=snapshot["due_date"],
+            required_amount=snapshot["required_total"],
         )
         await update.message.reply_text(message)  # type: ignore[arg-type]
 
@@ -94,10 +92,8 @@ class BotHandlers:
             await update.message.reply_text(str(exc))  # type: ignore[arg-type]
             return
         message = format_status(
-            fifth_date=snapshot["fifth_target_date"],
-            fifth_amount=snapshot["fifth_target_amount"],
-            tenth_date=snapshot["tenth_target_date"],
-            tenth_amount=snapshot["tenth_target_amount"],
+            due_date=snapshot["due_date"],
+            required_amount=snapshot["required_total"],
         )
         await update.message.reply_text(message)  # type: ignore[arg-type]
 
@@ -244,10 +240,8 @@ class BotHandlers:
         message_lines = [
             "21:30 check-in",
             format_status(
-                fifth_date=snapshot["fifth_target_date"],
-                fifth_amount=snapshot["fifth_target_amount"],
-                tenth_date=snapshot["tenth_target_date"],
-                tenth_amount=snapshot["tenth_target_amount"],
+                due_date=snapshot["due_date"],
+                required_amount=snapshot["required_total"],
             ),
             "Reply with /daily_confirm <extra> to log any extras within 60 minutes.",
         ]

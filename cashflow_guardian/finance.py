@@ -30,6 +30,16 @@ class CycleComputation:
     default_totals_by_date: Dict[date, int]
 
 
+@dataclass
+class RequiredFunds:
+    due_date: date
+    total: int
+    rent: int
+    tiffin: int
+    electricity: int
+    daily_spend_total: int
+
+
 def _first_day_next_month(anchor: date) -> date:
     next_month = anchor.month + 1
     year = anchor.year + (1 if next_month == 13 else 0)
@@ -185,6 +195,35 @@ def build_cycle_computation(start: date, config: AppConfig) -> CycleComputation:
         survival=survival,
         expected_default_spend=expected_default_spend,
         default_totals_by_date=totals_by_date,
+    )
+
+
+def _daily_spend_between(
+    start: date, end: date, defaults: DailyDefaultsConfig
+) -> Tuple[int, Dict[date, int]]:
+    if end < start:
+        return 0, {}
+    days = (end - start).days + 1
+    total, totals_by_date = _expected_default_totals(start, days, defaults)
+    return total, totals_by_date
+
+
+def compute_required_funds(today: date, config: AppConfig) -> RequiredFunds:
+    due_date = _first_day_next_month(today)
+    daily_total, _ = _daily_spend_between(
+        today, due_date, config.daily_defaults
+    )
+    rent = config.fixed_bills.rent
+    tiffin = _tiffin_allocation(config)
+    electricity = _electricity_allocation(due_date, config)
+    total = rent + tiffin + electricity + daily_total
+    return RequiredFunds(
+        due_date=due_date,
+        total=total,
+        rent=rent,
+        tiffin=tiffin,
+        electricity=electricity,
+        daily_spend_total=daily_total,
     )
 
 
