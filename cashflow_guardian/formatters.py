@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Mapping
+from typing import Mapping, Optional
 
 from .models import CycleState
 
@@ -70,6 +70,7 @@ def format_status(
     primary: Mapping[str, object],
     components: Mapping[str, Mapping[str, object]],
     tenth: Mapping[str, object],
+    spending: Optional[Mapping[str, object]] = None,
 ) -> str:
     due_date = primary.get("end", today)  # type: ignore[arg-type]
     due_date = due_date if isinstance(due_date, date) else today
@@ -162,5 +163,23 @@ def format_status(
     lines.append(
         f"- Daily spends {tenth_range}: {_format_money(tenth_daily_amount)}"
     )
+
+    if spending and spending.get("has_data"):
+        lines.append("")
+        lines.append("Monthly spend tracker:")
+        history = spending.get("history", [])
+        if isinstance(history, list):
+            for entry in history:
+                if not isinstance(entry, Mapping):
+                    continue
+                label = entry.get("label")
+                if not isinstance(label, str):
+                    continue
+                total = int(entry.get("total", 0))
+                lines.append(f"- {label}: {_format_money(total)}")
+        current_label = spending.get("current_label")
+        if isinstance(current_label, str):
+            current_total = int(spending.get("current_total", 0))
+            lines.append(f"- {current_label}: {_format_money(current_total)}")
 
     return "\n".join(lines)

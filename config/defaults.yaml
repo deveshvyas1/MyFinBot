@@ -32,3 +32,8 @@ cycle:
   auto_apply_defaults_after_minutes: 60
 buffer:
   track: true
+sheets:
+  enabled: true
+  spreadsheet_name: "My Bot Expenses"
+  worksheet_name: "Sheet1"
+  credentials_path: "config/service_account.json"

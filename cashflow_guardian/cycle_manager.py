@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from zoneinfo import ZoneInfo
 
@@ -17,10 +17,12 @@ from .models import (
     AppState,
     CycleState,
     DailyRecord,
+    DailySpendLog,
     DailyWalletState,
     ExtraSpendEntry,
     IncomeEntry,
 )
+from .sheets_store import GoogleSheetsSpendStore
 from .storage import StateStorage
 
 
@@ -32,6 +34,10 @@ class CycleManager:
         self._storage = storage
         self._tz = ZoneInfo(self._config.cycle.timezone)
         self._apply_overrides()
+        self._sheets_store: Optional[GoogleSheetsSpendStore] = None
+        if self._config.sheets and self._config.sheets.enabled:
+            self._sheets_store = GoogleSheetsSpendStore(self._config.sheets, self._tz)
+            self._refresh_spend_cache()
 
     @property
     def config(self) -> AppConfig:
@@ -59,6 +65,36 @@ class CycleManager:
             raise ValueError("Invalid default category")
         mapping = getattr(self._config.daily_defaults, category)
         mapping[item] = amount
+
+    def _refresh_spend_cache(self) -> None:
+        if not self._sheets_store or not self._sheets_store.is_ready:
+            return
+        logs = self._sheets_store.fetch_all()
+        if logs is None:
+            return
+        log_map = {entry.date.isoformat(): entry for entry in logs}
+        state = self.load_state()
+        if state.spend_logs != log_map:
+            state.spend_logs = log_map
+            self.save_state(state)
+
+    def _persist_spend_entry(self, entry: DailySpendLog) -> None:
+        if self._sheets_store and self._sheets_store.is_ready:
+            self._sheets_store.upsert(entry)
+
+    def _spend_defaults_for_date(self, target_date: date) -> Dict[str, int]:
+        weekday = target_date.weekday()
+        if weekday <= 4:
+            mapping = self._config.daily_defaults.weekday
+        elif weekday == 5:
+            mapping = self._config.daily_defaults.saturday
+        else:
+            mapping = self._config.daily_defaults.sunday
+        return {
+            "breakfast": int(mapping.get("breakfast", 0)),
+            "lunch": int(mapping.get("lunch", 0)),
+            "dinner": int(mapping.get("dinner", 0)),
+        }
 
     # ---------------------------------------------------------------------
     # Cycle lifecycle helpers
@@ -173,6 +209,7 @@ class CycleManager:
     def get_status_snapshot(
         self, today: date, user_id: Optional[int] = None
     ) -> Dict[str, object]:
+        self._refresh_spend_cache()
         cycle = self.ensure_cycle_for_date(today, user_id=user_id)
         primary, tenth = compute_required_windows(today, self._config)
         default_total, breakdown = daily_default_details(today, self._config)
@@ -201,6 +238,7 @@ class CycleManager:
             tenth.daily_spend_total - primary.daily_spend_total, 0
         )
         extra_start = primary.end + timedelta(days=1) if extra_days > 0 else None
+        spend_summary = self._build_spend_summary(today)
         return {
             "cycle": cycle,
             "today": today,
@@ -225,6 +263,129 @@ class CycleManager:
                 "total": default_total,
                 "breakdown": breakdown,
             },
+            "spending_summary": spend_summary,
+        }
+
+    # ------------------------------------------------------------------
+    # Spend logging helpers
+    # ------------------------------------------------------------------
+    def log_daily_spend(
+        self,
+        *,
+        entry_date: date,
+        breakfast: int,
+        lunch: int,
+        dinner: int,
+        other: int,
+        auto_filled: bool = False,
+    ) -> DailySpendLog:
+        self._refresh_spend_cache()
+        state = self.load_state()
+        recorded_at = datetime.now(self._tz)
+        entry = DailySpendLog(
+            date=entry_date,
+            breakfast=breakfast,
+            lunch=lunch,
+            dinner=dinner,
+            other=other,
+            auto_filled=auto_filled,
+            recorded_at=recorded_at,
+        )
+        state.spend_logs[entry_date.isoformat()] = entry
+        self._persist_spend_entry(entry)
+        if (
+            state.pending_spend_log_date == entry_date
+            and state.pending_spend_log_job_name
+        ):
+            state.pending_spend_log_date = None
+            state.pending_spend_log_job_name = None
+        self.save_state(state)
+        return entry
+
+    def get_daily_spend(self, entry_date: date) -> Optional[DailySpendLog]:
+        self._refresh_spend_cache()
+        state = self.load_state()
+        return state.spend_logs.get(entry_date.isoformat())
+
+    def ensure_default_spend_log(self, entry_date: date) -> Optional[DailySpendLog]:
+        self._refresh_spend_cache()
+        state = self.load_state()
+        if entry_date.isoformat() in state.spend_logs:
+            return None
+        defaults = self._spend_defaults_for_date(entry_date)
+        dinner_default = defaults.get("dinner", 90)
+        entry = DailySpendLog(
+            date=entry_date,
+            breakfast=defaults.get("breakfast", 35),
+            lunch=defaults.get("lunch", 50),
+            dinner=dinner_default,
+            other=0,
+            auto_filled=True,
+            recorded_at=datetime.now(self._tz),
+        )
+        state.spend_logs[entry_date.isoformat()] = entry
+        self._persist_spend_entry(entry)
+        if (
+            state.pending_spend_log_date == entry_date
+            and state.pending_spend_log_job_name
+        ):
+            state.pending_spend_log_date = None
+            state.pending_spend_log_job_name = None
+        self.save_state(state)
+        return entry
+
+    def mark_pending_spend(self, *, target_date: date, job_name: str) -> None:
+        state = self.load_state()
+        state.pending_spend_log_date = target_date
+        state.pending_spend_log_job_name = job_name
+        self.save_state(state)
+
+    def clear_pending_spend(self, target_date: Optional[date] = None) -> None:
+        state = self.load_state()
+        if state.pending_spend_log_date is None:
+            return
+        if target_date and state.pending_spend_log_date != target_date:
+            return
+        state.pending_spend_log_date = None
+        state.pending_spend_log_job_name = None
+        self.save_state(state)
+
+    def _build_spend_summary(self, today: date) -> Optional[Dict[str, object]]:
+        state = self.load_state()
+        if not state.spend_logs:
+            return None
+        logs = sorted(
+            (log for log in state.spend_logs.values()),
+            key=lambda item: item.date,
+        )
+        current_month_start = today.replace(day=1)
+        previous_months: Dict[date, List[DailySpendLog]] = {}
+        current_month_logs: List[DailySpendLog] = []
+        for log in logs:
+            month_start = log.date.replace(day=1)
+            if month_start < current_month_start:
+                previous_months.setdefault(month_start, []).append(log)
+            elif month_start == current_month_start:
+                current_month_logs.append(log)
+        history = []
+        for month_start in sorted(previous_months.keys()):
+            total = sum(entry.total for entry in previous_months[month_start])
+            history.append(
+                {
+                    "label": month_start.strftime("%b %Y").upper(),
+                    "total": total,
+                }
+            )
+        cutoff = today - timedelta(days=1)
+        current_total = sum(
+            entry.total for entry in current_month_logs if entry.date <= cutoff
+        )
+        current_label = f"{today.strftime('%b').upper()} 1 → ongoing"
+        return {
+            "history": history,
+            "current_label": current_label,
+            "current_total": current_total,
+            "has_data": bool(history or current_month_logs),
         }
 
     # ------------------------------------------------------------------

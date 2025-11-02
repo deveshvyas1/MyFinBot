@@ -22,6 +22,7 @@ from .formatters import format_cycle_intro, format_status
 
 CHECKIN_JOB_NAME = "cashflow_guardian_daily_checkin"
 TIFFIN_REMINDER_JOB_NAME = "cashflow_guardian_tiffin_reminder"
+SPEND_LOG_AUTO_JOB_PREFIX = "cashflow_guardian_spend_auto"
 SET_DEFAULTS_WAIT = 1
 
 
@@ -62,8 +63,10 @@ class BotHandlers:
             primary=snapshot["primary"],
             components=snapshot["components"],
             tenth=snapshot["tenth_summary"],
+            spending=snapshot.get("spending_summary"),
         )
         await update.message.reply_text(message)  # type: ignore[arg-type]
+        await self._schedule_daily_jobs(update, context)
 
     async def start_cycle(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not context.args:
@@ -102,6 +105,7 @@ class BotHandlers:
             primary=snapshot["primary"],
             components=snapshot["components"],
             tenth=snapshot["tenth_summary"],
+            spending=snapshot.get("spending_summary"),
         )
         await update.message.reply_text(message)  # type: ignore[arg-type]
 
@@ -129,6 +133,61 @@ class BotHandlers:
             return
         await update.message.reply_text(
             f"Logged extra spend of {amount}."
+        )  # type: ignore[arg-type]
+
+    async def log_spend(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not context.args or len(context.args) not in {4, 5}:
+            usage = (
+                "Usage: /log_spend [YYYY-MM-DD] <breakfast> <lunch> <dinner> <other>\n"
+                "Example: /log_spend 40 60 120 20 or /log_spend 2025-11-02 35 50 90 0"
+            )
+            await update.message.reply_text(usage)  # type: ignore[arg-type]
+            return
+        args = context.args
+        if len(args) == 5:
+            date_str, *values = args
+            try:
+                entry_date = date.fromisoformat(date_str)
+            except ValueError:
+                await update.message.reply_text("Invalid date. Use YYYY-MM-DD.")  # type: ignore[arg-type]
+                return
+        else:
+            values = args
+            entry_date = self._current_date()
+        if len(values) != 4:
+            await update.message.reply_text("Please provide four numbers for breakfast, lunch, dinner, and other.")  # type: ignore[arg-type]
+            return
+        today = self._current_date()
+        if entry_date > today:
+            await update.message.reply_text("Date cannot be in the future.")  # type: ignore[arg-type]
+            return
+        totals = []
+        for value in values:
+            try:
+                totals.append(int(value))
+            except ValueError:
+                await update.message.reply_text("Values must be integers.")  # type: ignore[arg-type]
+                return
+        breakfast, lunch, dinner, other = totals
+        entry = self.cycle_manager.log_daily_spend(
+            entry_date=entry_date,
+            breakfast=breakfast,
+            lunch=lunch,
+            dinner=dinner,
+            other=other,
+            auto_filled=False,
+        )
+        job_queue = context.job_queue
+        if job_queue is not None:
+            auto_job_name = f"{SPEND_LOG_AUTO_JOB_PREFIX}_{entry_date.isoformat()}"
+            self._cancel_job(job_queue, auto_job_name)
+        self.cycle_manager.clear_pending_spend(entry_date)
+        await update.message.reply_text(
+            (
+                f"Recorded daily spends for {entry_date.strftime('%d-%b-%y')}: "
+                f"Breakfast {entry.breakfast}, Lunch {entry.lunch}, "
+                f"Dinner {entry.dinner}, Other {entry.other}."
+            )
         )  # type: ignore[arg-type]
 
     async def set_balance(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -261,8 +320,14 @@ class BotHandlers:
                 primary=snapshot["primary"],
                 components=snapshot["components"],
                 tenth=snapshot["tenth_summary"],
+                spending=snapshot.get("spending_summary"),
             ),
             "Reply with /daily_confirm <extra> to log any extras within 60 minutes.",
+            (
+                "Spending log: reply with /log_spend <breakfast> <lunch> <dinner> <other> "
+                "within 2 hours."
+            ),
+            "If you don't reply, defaults (35/50/90 or 120 on Sundays) are recorded automatically.",
         ]
         await context.bot.send_message(chat_id=chat_id, text="\n".join(message_lines))
         auto_job_name = f"{CHECKIN_JOB_NAME}_auto_{today.isoformat()}"
@@ -280,6 +345,19 @@ class BotHandlers:
             data={"date": today.isoformat()},
         )
         self.cycle_manager.mark_pending_default(target_date=today, job_name=auto_job_name)
+
+        spend_job_name = f"{SPEND_LOG_AUTO_JOB_PREFIX}_{today.isoformat()}"
+        checkin_time = parse_checkin_time(self.cycle_manager.config)
+        auto_fill_time = datetime.combine(today, checkin_time) + timedelta(hours=2)
+        self._cancel_job(job_queue, spend_job_name)
+        job_queue.run_once(
+            self.auto_fill_spend_job,
+            when=auto_fill_time,
+            name=spend_job_name,
+            chat_id=chat_id,
+            data={"date": today.isoformat()},
+        )
+        self.cycle_manager.mark_pending_spend(target_date=today, job_name=spend_job_name)
 
     async def auto_apply_defaults_job(
         self, context: ContextTypes.DEFAULT_TYPE
@@ -302,6 +380,27 @@ class BotHandlers:
             chat_id=job.chat_id,
             text=(
                 "Check-in window expired. Default spends applied with zero extras."
+            ),
+        )
+
+    async def auto_fill_spend_job(
+        self, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        job = context.job
+        if job is None or not job.data:
+            return
+        entry_date = date.fromisoformat(job.data["date"])
+        entry = self.cycle_manager.ensure_default_spend_log(entry_date)
+        if entry is None:
+            self.cycle_manager.clear_pending_spend(entry_date)
+            return
+        self.cycle_manager.clear_pending_spend(entry_date)
+        await context.bot.send_message(
+            chat_id=job.chat_id,
+            text=(
+                "No spend log received. Recorded defaults: "
+                f"Breakfast {entry.breakfast}, Lunch {entry.lunch}, "
+                f"Dinner {entry.dinner}, Other {entry.other}."
             ),
         )
 
@@ -346,6 +445,8 @@ class BotHandlers:
             return
         self._cancel_job(job_queue, CHECKIN_JOB_NAME)
         self._cancel_job(job_queue, TIFFIN_REMINDER_JOB_NAME)
+        if state.pending_spend_log_job_name:
+            self._cancel_job(job_queue, state.pending_spend_log_job_name)
         job_queue.run_daily(
             self.daily_checkin_job,
             time=parse_checkin_time(self.cycle_manager.config),
@@ -359,6 +460,29 @@ class BotHandlers:
             name=TIFFIN_REMINDER_JOB_NAME,
             chat_id=state.user_id,
         )
+        spend_date = state.pending_spend_log_date
+        if spend_date is not None:
+            auto_job_name = (
+                state.pending_spend_log_job_name
+                or f"{SPEND_LOG_AUTO_JOB_PREFIX}_{spend_date.isoformat()}"
+            )
+            checkin_time = parse_checkin_time(self.cycle_manager.config)
+            auto_time = datetime.combine(spend_date, checkin_time) + timedelta(hours=2)
+            now = datetime.now(self._tz)
+            if auto_time <= now:
+                self.cycle_manager.ensure_default_spend_log(spend_date)
+                self.cycle_manager.clear_pending_spend(spend_date)
+            else:
+                job_queue.run_once(
+                    self.auto_fill_spend_job,
+                    when=auto_time,
+                    name=auto_job_name,
+                    chat_id=state.user_id,
+                    data={"date": spend_date.isoformat()},
+                )
+                self.cycle_manager.mark_pending_spend(
+                    target_date=spend_date, job_name=auto_job_name
+                )
 
 
 def register_handlers(application: Application, handlers: BotHandlers) -> None:
@@ -367,6 +491,7 @@ def register_handlers(application: Application, handlers: BotHandlers) -> None:
     application.add_handler(CommandHandler("start_cycle", handlers.start_cycle))
     application.add_handler(CommandHandler("set_balance", handlers.set_balance))
     application.add_handler(CommandHandler("log_extra", handlers.log_extra))
+    application.add_handler(CommandHandler("log_spend", handlers.log_spend))
     application.add_handler(CommandHandler("daily_confirm", handlers.daily_confirm))
 
     defaults_conversation = ConversationHandler(

@@ -39,12 +39,20 @@ class BufferConfig(BaseModel):
     track: bool = True
 
 
+class SheetsConfig(BaseModel):
+    enabled: bool = False
+    spreadsheet_name: Optional[str] = None
+    worksheet_name: str = "Sheet1"
+    credentials_path: Optional[str] = None
+
+
 class AppConfig(BaseModel):
     fixed_bills: FixedBillsConfig
     income_sources: List[IncomeSourceConfig]
     daily_defaults: DailyDefaultsConfig
     cycle: CycleConfig
     buffer: BufferConfig = Field(default_factory=BufferConfig)
+    sheets: Optional[SheetsConfig] = None
 
 
 class IncomeEntry(BaseModel):
@@ -99,6 +107,20 @@ class SinkingBreakdown(BaseModel):
         return self.rent + self.tiffin + self.electricity + self.survival
 
 
+class DailySpendLog(BaseModel):
+    date: date
+    breakfast: int = 0
+    lunch: int = 0
+    dinner: int = 0
+    other: int = 0
+    auto_filled: bool = False
+    recorded_at: datetime
+
+    @property
+    def total(self) -> int:
+        return self.breakfast + self.lunch + self.dinner + self.other
+
+
 class DailyWalletState(BaseModel):
     goal: int
     balance: int
@@ -127,6 +149,9 @@ class AppState(BaseModel):
     user_id: Optional[int] = None
     cycle: Optional[CycleState] = None
     overrides: Dict[str, Dict] = Field(default_factory=dict)
+    spend_logs: Dict[str, DailySpendLog] = Field(default_factory=dict)
+    pending_spend_log_date: Optional[date] = None
+    pending_spend_log_job_name: Optional[str] = None
 
     def copy_with_cycle(self, cycle: CycleState) -> "AppState":
         return AppState(user_id=self.user_id, cycle=cycle, overrides=self.overrides)
