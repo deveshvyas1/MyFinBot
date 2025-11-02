@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from telegram import BotCommand
 from telegram.ext import ApplicationBuilder
 
 from cashflow_guardian.config_loader import load_config
@@ -19,6 +20,17 @@ TOKEN_PATH = BASE_DIR / "config" / "bot_token.txt"
 
 
 async def _post_init(application, handlers: BotHandlers) -> None:
+    await application.bot.set_my_commands(
+        [
+            BotCommand("status", "Show today's wallet summary"),
+            BotCommand("daily_confirm", "Confirm today's check-in"),
+            BotCommand("log_spend", "Record today's spend breakdown"),
+            BotCommand("log_extra", "Log an extra spend"),
+            BotCommand("set_balance", "Override wallet balance"),
+            BotCommand("set_defaults", "Update daily defaults"),
+            BotCommand("start_cycle", "Start or restart a cycle"),
+        ]
+    )
     handlers.reschedule_jobs(application)
 
 
