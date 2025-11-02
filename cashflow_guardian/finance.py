@@ -281,6 +281,9 @@ def compute_required_windows(
     weekday_meals = config.fixed_bills.tiffin_weekday_count
     saturday_meals = config.fixed_bills.tiffin_saturday_count
     electricity = _electricity_allocation(due_date, config)
+    rent_due = due_date
+    tiffin_due = due_date
+    electricity_due = due_date
 
     primary_daily_total, _, primary_breakdown = _daily_spend_between(
         today, due_date, config.daily_defaults
@@ -292,16 +295,17 @@ def compute_required_windows(
     )
     tenth_days = (tenth_date - today).days + 1
 
+    primary_total = rent + tiffin + electricity + primary_daily_total
     primary = RequiredFunds(
         start=today,
         end=due_date,
-        total=rent + tiffin + electricity + primary_daily_total,
+        total=primary_total,
         rent=rent,
         tiffin=tiffin,
         tiffin_weekday_meals=weekday_meals,
         tiffin_saturday_meals=saturday_meals,
         electricity=electricity,
-        electricity_due=due_date,
+        electricity_due=electricity_due,
         daily_spend_total=primary_daily_total,
         day_count=primary_days,
         daily_breakdown={
@@ -310,16 +314,25 @@ def compute_required_windows(
         },
     )
 
+    rent_within_tenth = rent if rent_due <= tenth_date else 0
+    tiffin_within_tenth = tiffin if tiffin_due <= tenth_date else 0
+    electricity_within_tenth = electricity if electricity_due <= tenth_date else 0
+    tenth_total = (
+        rent_within_tenth
+        + tiffin_within_tenth
+        + electricity_within_tenth
+        + tenth_daily_total
+    )
     tenth = RequiredFunds(
         start=today,
         end=tenth_date,
-        total=rent + tiffin + electricity + tenth_daily_total,
-        rent=rent,
-        tiffin=tiffin,
+        total=tenth_total,
+        rent=rent_within_tenth,
+        tiffin=tiffin_within_tenth,
         tiffin_weekday_meals=weekday_meals,
         tiffin_saturday_meals=saturday_meals,
-        electricity=electricity,
-        electricity_due=due_date,
+        electricity=electricity_within_tenth,
+        electricity_due=electricity_due,
         daily_spend_total=tenth_daily_total,
         day_count=tenth_days,
         daily_breakdown={
