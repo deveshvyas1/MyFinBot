@@ -1,6 +1,6 @@
 # Cash-Flow Guardian Telegram Bot
 
-A purpose-built Telegram bot that enforces a 30-day virtual wallet routine tailored to the "Cash-Flow Guardian" blueprint. The bot tracks two virtual wallets - a **Sinking Fund** for non-negotiable first-of-month bills (rent, tiffin prepayment, bi-monthly electricity) and a **Daily Wallet** for everyday spending. It also performs a 21:30 check-in that deducts default daily costs and nudges you to log extra expenses.
+A purpose-built Telegram bot that enforces a 30-day virtual wallet routine tailored to the "Cash-Flow Guardian" blueprint. The bot tracks two virtual wallets - a **Sinking Fund** for non-negotiable first-of-month bills (rent, tiffin post-pay on the 1st, bi-monthly electricity) and a **Daily Wallet** for everyday spending. It also performs a 21:30 check-in that deducts default daily costs and nudges you to log extra expenses.
 
 ## Features
 
@@ -74,7 +74,7 @@ README.md
 - `/start` - introduction and an immediate status snapshot.
 - `/start_cycle <amount>` - optional manual cycle with a custom opening balance (useful if incomes differ from the defaults).
 - `/set_balance <amount>` - optional override for an income that deviates from the plan.
-- `/status` - shows how much cash to hold today (with a breakdown of rent, electricity, tiffin, and daily defaults) to cover essentials through the first of next month, plus the total required through the upcoming 10th.
+- `/status` - shows how much cash to hold today (with a breakdown of rent, electricity, tiffin post-pay, and daily defaults including breakfast/lunch/library totals) to cover essentials through the first of next month, plus the total required through the upcoming 10th.
 - `/log_extra <amount> [note]` - logs additional spending outside of the default day plan.
 - `/daily_confirm [extra] [note]` - responds to the 21:30 check-in. If you fail to reply within an hour, defaults are auto-applied with zero extras.
 - `/set_defaults` - interactive update of breakfast/lunch/study defaults. Changes persist to the next cycle.

@@ -186,12 +186,14 @@ class CycleManager:
                 "amount": primary.tiffin,
                 "weekday_meals": primary.tiffin_weekday_meals,
                 "saturday_meals": primary.tiffin_saturday_meals,
+                "due_date": primary.end,
             },
             "daily": {
                 "amount": primary.daily_spend_total,
                 "start": primary.start,
                 "end": primary.end,
                 "days": primary.day_count,
+                "breakdown": primary.daily_breakdown,
             },
         }
         extra_days = max(tenth.day_count - primary.day_count, 0)
@@ -207,6 +209,7 @@ class CycleManager:
                 "end": primary.end,
                 "days": primary.day_count,
                 "daily_amount": primary.daily_spend_total,
+                "daily_breakdown": primary.daily_breakdown,
             },
             "components": components,
             "tenth_summary": {

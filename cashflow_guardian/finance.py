@@ -1,9 +1,10 @@
 """Core finance calculations for the Cash-Flow Guardian bot."""
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
-from typing import Dict, Iterable, List, Optional, Tuple
+from datetime import date, time, timedelta
+from typing import Dict, Iterable, List, Tuple
 
 from zoneinfo import ZoneInfo
 
@@ -43,6 +44,44 @@ class RequiredFunds:
     electricity_due: date
     daily_spend_total: int
     day_count: int
+    daily_breakdown: Dict[str, Dict[str, int]]
+
+
+_ITEM_LABEL_OVERRIDES = {"study": "Library"}
+
+
+def resolve_cycle_start(today: date, config: AppConfig) -> date:
+    anchor_day = max((source.day for source in config.income_sources), default=1)
+    year = today.year
+    month = today.month
+    candidate = _safe_date(year, month, anchor_day)
+    if candidate > today:
+        month -= 1
+        if month == 0:
+            month = 12
+            year -= 1
+        candidate = _safe_date(year, month, anchor_day)
+
+    cycle_length = max(config.cycle.length_days, 1)
+    while (today - candidate).days >= cycle_length:
+        month -= 1
+        if month == 0:
+            month = 12
+            year -= 1
+        candidate = _safe_date(year, month, anchor_day)
+
+    return candidate
+
+
+def parse_checkin_time(config: AppConfig) -> time:
+    raw = config.cycle.checkin_time.strip()
+    try:
+        parsed = time.fromisoformat(raw)
+    except ValueError as exc:
+        raise ValueError(
+            f"Invalid checkin_time configured: '{raw}'. Expected HH:MM format."
+        ) from exc
+    return parsed.replace(tzinfo=ZoneInfo(config.cycle.timezone))
 
 
 def _first_day_next_month(anchor: date) -> date:
@@ -55,16 +94,13 @@ def _first_day_next_month(anchor: date) -> date:
 def _resolve_income_date(anchor: date, day: int) -> date:
     if day >= anchor.day:
         return anchor.replace(day=day)
-    # Move to next month
     next_month = anchor.month + 1
     year = anchor.year + (1 if next_month == 13 else 0)
     month = 1 if next_month == 13 else next_month
-    # Handle shorter months safely
     while True:
         try:
             return date(year, month, day)
         except ValueError:
-            # Day exceeded month length; step back one day until valid
             day -= 1
 
 
@@ -83,9 +119,7 @@ def _resolve_income_schedule(
     entries: List[IncomeEntry] = []
     for source in configs:
         income_date = _resolve_income_date(start, source.day)
-        if income_date < start:
-            continue
-        if income_date > cycle_end:
+        if income_date < start or income_date > cycle_end:
             continue
         entries.append(
             IncomeEntry(
@@ -94,7 +128,6 @@ def _resolve_income_schedule(
                 planned_amount=source.amount,
             )
         )
-    # Ensure chronological order
     entries.sort(key=lambda entry: entry.date)
     return entries
 
@@ -113,8 +146,10 @@ def _electricity_allocation(due_date: date, config: AppConfig) -> int:
     return 0
 
 
-def _default_cost_for_date(target: date, defaults: DailyDefaultsConfig) -> Tuple[int, Dict[str, int]]:
-    weekday = target.weekday()  # Monday=0 ... Sunday=6
+def _default_cost_for_date(
+    target: date, defaults: DailyDefaultsConfig
+) -> Tuple[int, Dict[str, int]]:
+    weekday = target.weekday()
     if weekday <= 4:
         mapping = defaults.weekday
     elif weekday == 5:
@@ -126,7 +161,6 @@ def _default_cost_for_date(target: date, defaults: DailyDefaultsConfig) -> Tuple
 
 
 def daily_default_details(target: date, config: AppConfig) -> Tuple[int, Dict[str, int]]:
-    """Public helper to expose default spend details for a given date."""
     return _default_cost_for_date(target, config.daily_defaults)
 
 
@@ -141,6 +175,30 @@ def _expected_default_totals(
         totals[current] = total
         running_total += total
     return running_total, totals
+
+
+def _daily_spend_between(
+    start: date, end: date, defaults: DailyDefaultsConfig
+) -> Tuple[int, Dict[date, int], Dict[str, Dict[str, int]]]:
+    if end < start:
+        return 0, {}, {}
+    totals_by_date: Dict[date, int] = OrderedDict()
+    per_item: Dict[str, Dict[str, int]] = OrderedDict()
+    total = 0
+    current = start
+    while current <= end:
+        day_total, breakdown = _default_cost_for_date(current, defaults)
+        totals_by_date[current] = day_total
+        total += day_total
+        for item, value in breakdown.items():
+            item_label = _ITEM_LABEL_OVERRIDES.get(
+                item, item.replace("_", " ").title()
+            )
+            bucket = per_item.setdefault(item_label, {"total": 0, "count": 0})
+            bucket["total"] += value
+            bucket["count"] += 1
+        current += timedelta(days=1)
+    return total, totals_by_date, per_item
 
 
 def _survival_allocation(
@@ -160,7 +218,7 @@ def _survival_allocation(
                 date=current.isoformat(),
                 default_spend=default_total,
                 breakdown=", ".join(
-                    f"{key}: ₹{value}" for key, value in breakdown.items()
+                    f"{key}: \u20b9{value}" for key, value in breakdown.items()
                 ),
             )
         )
@@ -203,21 +261,20 @@ def build_cycle_computation(start: date, config: AppConfig) -> CycleComputation:
     )
 
 
-def _daily_spend_between(
-    start: date, end: date, defaults: DailyDefaultsConfig
-) -> Tuple[int, Dict[date, int]]:
-    if end < start:
-        return 0, {}
-    days = (end - start).days + 1
-    total, totals_by_date = _expected_default_totals(start, days, defaults)
-    return total, totals_by_date
+def _upcoming_tenth(anchor: date) -> date:
+    if anchor.day <= 10:
+        return anchor.replace(day=10)
+    next_month = anchor.month + 1
+    year = anchor.year + (1 if next_month == 13 else 0)
+    month = 1 if next_month == 13 else next_month
+    return _safe_date(year, month, 10)
 
 
 def compute_required_windows(
     today: date, config: AppConfig
 ) -> Tuple[RequiredFunds, RequiredFunds]:
     due_date = _first_day_next_month(today)
-    tenth_date = _safe_date(due_date.year, due_date.month, 10)
+    tenth_date = _upcoming_tenth(today)
 
     rent = config.fixed_bills.rent
     tiffin = _tiffin_allocation(config)
@@ -225,12 +282,12 @@ def compute_required_windows(
     saturday_meals = config.fixed_bills.tiffin_saturday_count
     electricity = _electricity_allocation(due_date, config)
 
-    primary_daily_total, _ = _daily_spend_between(
+    primary_daily_total, _, primary_breakdown = _daily_spend_between(
         today, due_date, config.daily_defaults
     )
     primary_days = (due_date - today).days + 1
 
-    tenth_daily_total, _ = _daily_spend_between(
+    tenth_daily_total, _, tenth_breakdown = _daily_spend_between(
         today, tenth_date, config.daily_defaults
     )
     tenth_days = (tenth_date - today).days + 1
@@ -247,6 +304,10 @@ def compute_required_windows(
         electricity_due=due_date,
         daily_spend_total=primary_daily_total,
         day_count=primary_days,
+        daily_breakdown={
+            key: {"total": value["total"], "count": value["count"]}
+            for key, value in primary_breakdown.items()
+        },
     )
 
     tenth = RequiredFunds(
@@ -261,20 +322,10 @@ def compute_required_windows(
         electricity_due=due_date,
         daily_spend_total=tenth_daily_total,
         day_count=tenth_days,
+        daily_breakdown={
+            key: {"total": value["total"], "count": value["count"]}
+            for key, value in tenth_breakdown.items()
+        },
     )
 
     return primary, tenth
-
-
-def parse_checkin_time(config: AppConfig) -> time:
-    hour, minute = map(int, config.cycle.checkin_time.split(":"))
-    return time(hour=hour, minute=minute, tzinfo=ZoneInfo(config.cycle.timezone))
-
-
-def resolve_cycle_start(today: date, config: AppConfig) -> date:
-    anchor_day = max(source.day for source in config.income_sources)
-    if today.day >= anchor_day:
-        return _safe_date(today.year, today.month, anchor_day)
-    prev_month = today.month - 1 or 12
-    prev_year = today.year - 1 if today.month == 1 else today.year
-    return _safe_date(prev_year, prev_month, anchor_day)
