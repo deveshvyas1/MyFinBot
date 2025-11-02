@@ -1,7 +1,7 @@
 """Telegram command and job handlers."""
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Optional
 
 from telegram import Update
@@ -21,6 +21,7 @@ from .finance import parse_checkin_time
 from .formatters import format_cycle_intro, format_status
 
 CHECKIN_JOB_NAME = "cashflow_guardian_daily_checkin"
+TIFFIN_REMINDER_JOB_NAME = "cashflow_guardian_tiffin_reminder"
 SET_DEFAULTS_WAIT = 1
 
 
@@ -33,6 +34,9 @@ class BotHandlers:
 
     def _current_date(self) -> date:
         return datetime.now(self._tz).date()
+
+    def _tiffin_reminder_time(self) -> time:
+        return time(hour=17, minute=0, tzinfo=self._tz)
 
     # ------------------------------------------------------------------
     # Command callbacks
@@ -81,7 +85,7 @@ class BotHandlers:
             user_id=user_id,
         )
         await update.message.reply_text(format_cycle_intro(cycle))  # type: ignore[arg-type]
-        await self._schedule_checkin_job(update, context)
+        await self._schedule_daily_jobs(update, context)
 
     async def status(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         today = self._current_date()
@@ -231,6 +235,15 @@ class BotHandlers:
     # ------------------------------------------------------------------
     # Job management
     # ------------------------------------------------------------------
+    async def tiffin_reminder_job(self, context: ContextTypes.DEFAULT_TYPE) -> None:
+        job = context.job
+        if job is None:
+            return
+        await context.bot.send_message(
+            chat_id=job.chat_id,
+            text="5 PM reminder: choose today's tiffin sabji on WhatsApp.",
+        )
+
     async def daily_checkin_job(self, context: ContextTypes.DEFAULT_TYPE) -> None:
         job = context.job
         if job is None:
@@ -292,7 +305,7 @@ class BotHandlers:
             ),
         )
 
-    async def _schedule_checkin_job(
+    async def _schedule_daily_jobs(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         chat = update.effective_chat
@@ -302,10 +315,18 @@ class BotHandlers:
         if job_queue is None:
             return
         self._cancel_job(job_queue, CHECKIN_JOB_NAME)
+        self._cancel_job(job_queue, TIFFIN_REMINDER_JOB_NAME)
         job_queue.run_daily(
             self.daily_checkin_job,
             time=parse_checkin_time(self.cycle_manager.config),
             name=CHECKIN_JOB_NAME,
+            chat_id=chat.id,
+        )
+        job_queue.run_daily(
+            self.tiffin_reminder_job,
+            time=self._tiffin_reminder_time(),
+            days=(0, 1, 2, 3, 4, 5),
+            name=TIFFIN_REMINDER_JOB_NAME,
             chat_id=chat.id,
         )
 
@@ -321,13 +342,21 @@ class BotHandlers:
         if not state.cycle or state.user_id is None:
             return
         job_queue = application.job_queue
-        self._cancel_job(job_queue, CHECKIN_JOB_NAME)
         if job_queue is None:
             return
+        self._cancel_job(job_queue, CHECKIN_JOB_NAME)
+        self._cancel_job(job_queue, TIFFIN_REMINDER_JOB_NAME)
         job_queue.run_daily(
             self.daily_checkin_job,
             time=parse_checkin_time(self.cycle_manager.config),
             name=CHECKIN_JOB_NAME,
+            chat_id=state.user_id,
+        )
+        job_queue.run_daily(
+            self.tiffin_reminder_job,
+            time=self._tiffin_reminder_time(),
+            days=(0, 1, 2, 3, 4, 5),
+            name=TIFFIN_REMINDER_JOB_NAME,
             chat_id=state.user_id,
         )
 

@@ -6,9 +6,10 @@ A purpose-built Telegram bot that enforces a 30-day virtual wallet routine tailo
 
 - 30-day cycle aligned with the 10th salary inflow and 5th home support.
 - Automatic cycle detection — `/status` works without any manual setup.
-- Automatic Sinking Fund goal calculation (rent, tiffin, and electricity months), including a survival cushion until the next income arrives.
+- Automatic Sinking Fund goal calculation (rent, tiffin post-pay, bi-monthly electricity) including a survival cushion until the next income arrives.
 - Daily Wallet allowance with rolling average guidance and wiggle-room hints.
 - 21:30 reminder with automatic default deductions if you do not respond within an hour.
+- 17:00 reminder (Mon–Sat) to pick the day's tiffin sabji on WhatsApp.
 - Commands to log extra spends, record incomes, and tweak default meal/transport prices.
 - JSON-backed state so the bot survives restarts.
 
